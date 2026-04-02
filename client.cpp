@@ -29,7 +29,7 @@ void recv_messages(int sock){
         buffer[n] = '\0';
 {
     std::lock_guard<std::mutex> lock(cout_mutex);
-    std::cout << "\nserver: " << buffer << std::endl;
+    std::cout << "\n" << buffer << std::endl;
 }
     }
 }

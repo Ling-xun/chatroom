@@ -49,7 +49,7 @@ void handle_client(int client_fd){
     return;
     }
     buffer[n] = '\0';
-    std::string formatted_msg="["+std::to_string(client_fd)+"]:"+buffer+"\n";
+    std::string formatted_msg="["+std::to_string(client_fd)+"]:"+buffer;
     std::cout<<"thread "<<std::this_thread::get_id()
          <<" "<<formatted_msg<<std::endl;
     broadcast_msg(client_fd,formatted_msg);
