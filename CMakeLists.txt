@@ -8,12 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Threads REQUIRED)
 
 add_executable(server
-    src/main.cpp
-    src/chat_server.cpp
+    src/server/main.cpp
+    src/server/chat_server.cpp
 )
 
 add_executable(client
-    src/client.cpp
+    src/client/main.cpp
+    src/client/chat_client.cpp
 )
 
 target_include_directories(server PRIVATE include)

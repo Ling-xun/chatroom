@@ -1,11 +1,8 @@
-#include <iostream>
-#include <cstring>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
+#include "client/chat_client.h"
 #include <string>
-#include <thread>
 #include<mutex>
+#include <iostream>
+#include <sys/socket.h>
 std::mutex cout_mutex;
 void send_messages(int sock){
     while(true){
@@ -33,21 +30,4 @@ void recv_messages(int sock){
 }     
     }
 }
-int main() {
 
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(8080);
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-    connect(sock, (sockaddr*)&addr, sizeof(addr));
-
-    std::thread sender(send_messages,sock);
-    std::thread receiver(recv_messages,sock);
-    sender.join();
-    receiver.join();
-    close(sock);
-    return 0;
-}
