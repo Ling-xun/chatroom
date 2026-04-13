@@ -1,4 +1,0 @@
-/home/jingyi/socket_lab/chatroom/build/CMakeFiles/server.dir
-/home/jingyi/socket_lab/chatroom/build/CMakeFiles/client.dir
-/home/jingyi/socket_lab/chatroom/build/CMakeFiles/edit_cache.dir
-/home/jingyi/socket_lab/chatroom/build/CMakeFiles/rebuild_cache.dir

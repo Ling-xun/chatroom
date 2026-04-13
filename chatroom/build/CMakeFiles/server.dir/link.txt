@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/server.dir/src/main.cpp.o CMakeFiles/server.dir/src/chat_server.cpp.o -o server 
