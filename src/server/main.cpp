@@ -33,7 +33,7 @@ int main() {
     }
     {
         std::lock_guard<std::mutex> lock(clients_mutex);
-        clients.push_back(client_fd);
+        clients.push_back({client_fd,"client_"+std::to_string(client_fd)});
     }
     std::thread t(handle_client,client_fd);
     t.detach();

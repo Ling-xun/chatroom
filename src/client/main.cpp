@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include<thread>
 #include <cstdio>
+#include <iostream>
+#include <string>
 int main() {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
      if(sock<0){
@@ -19,6 +21,13 @@ int main() {
         close(sock);
         return -1;
     }
+    std::string name;
+    std::cout<<"请输入您的姓名：";
+    getline(std::cin,name);
+    if(name.empty()){
+        name = "unknown";
+    }
+    send(sock,name.c_str(),name.size(),0);
     std::thread sender(send_messages,sock);
     std::thread receiver(recv_messages,sock);
     sender.join();
