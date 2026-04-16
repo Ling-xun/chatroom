@@ -5,7 +5,8 @@
 struct ClientInfo{
     int sock;
     std::string name;
-};
+    bool registered;
+   };
 extern std::vector<ClientInfo> clients;
 extern std::mutex clients_mutex;
 void handle_client(int client_fd);

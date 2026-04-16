@@ -4,7 +4,8 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include<thread>
+#include <sys/epoll.h>
+#include <fcntl.h>
 int main() {
 
     // 1 创建socket
@@ -23,20 +24,68 @@ int main() {
     listen(server_fd, 5);
 
     std::cout << "server start at port 8080" << std::endl;
-    while(true){
 
-    int client_fd=accept(server_fd,nullptr,nullptr);
+    int epoll_fd = epoll_create1(0);
     
-    if(client_fd<0){
-    perror("accept");
+    if (epoll_fd < 0) {
+    perror("epoll_create1");
+    close(server_fd);
+    return -1;
+    }
+
+    epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = server_fd;
+
+if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) < 0) {
+    perror("epoll_ctl: server_fd");
+    close(server_fd);
+    close(epoll_fd);
+    return -1;
+}
+
+    epoll_event events[1024];
+
+    while(true){
+        
+        int nfds = epoll_wait(epoll_fd, events, 1024, -1);
+
+        if(nfds<0){
+        perror("epoll_wait");
+        continue;
+        }
+
+    for(int i=0;i<nfds;i++){
+       if(events[i].data.fd == server_fd){
+          int client_fd=accept(server_fd,nullptr,nullptr);
+          if(client_fd<0){
+            perror("accept");
+            continue;
+          }
+
+        {
+          std::lock_guard<std::mutex> lock(clients_mutex);
+          clients.push_back({client_fd,"",false});
+        }
+
+          epoll_event client_ev;
+          client_ev.events = EPOLLIN;
+          client_ev.data.fd = client_fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_ev) < 0) {
+    perror("epoll_ctl: client_fd");
+    close(client_fd);
+    remove_client(client_fd);
     continue;
     }
-    {
-        std::lock_guard<std::mutex> lock(clients_mutex);
-        clients.push_back({client_fd,"client_"+std::to_string(client_fd)});
+          
+}
+else{
+        int client_fd=events[i].data.fd;
+        std::cout << "client fd " << client_fd << " is readable\n";
     }
-    std::thread t(handle_client,client_fd);
-    t.detach();
+}
+   
    }     
     close(server_fd);
     return 0;
