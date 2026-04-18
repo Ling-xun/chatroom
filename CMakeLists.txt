@@ -10,6 +10,8 @@ find_package(Threads REQUIRED)
 add_executable(server
     src/server/main.cpp
     src/server/chat_server.cpp
+    src/server/client_manager.cpp
+    src/server/event_handler.cpp
 )
 
 add_executable(client

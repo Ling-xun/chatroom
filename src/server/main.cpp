@@ -1,4 +1,6 @@
 #include"server/chat_server.h"
+#include "server/client_manager.h"
+#include "server/event_handler.h"
 #include <iostream>
 #include <cstring>
 #include <unistd.h>
