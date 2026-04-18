@@ -7,6 +7,7 @@
 #include<thread>
 #include <algorithm>
 #include <ctime>
+#include <sys/epoll.h>
 std::vector<ClientInfo> clients;
 std::mutex clients_mutex;
 std::string get_client_name(int client_fd){
@@ -59,62 +60,61 @@ void remove_client(int client_fd){
     }
 }
 
-void handle_client(int client_fd) {
-    char buffer[1025];
-    int n = recv(client_fd, buffer, 1024, 0);
-
-    if (n <= 0) {
-        perror("recv");
-        remove_client(client_fd);
-        close(client_fd);
-        return;
-    }
-
-    buffer[n] = '\0';
-    std::string name = buffer;
-
-    if (name.empty()) {
-        name = "unknown";
-    }
-
-set_client_name(client_fd, name);
-
-std::string now = get_current_time();
-std::string welcome_msg = "[" + now + "] [system] Welcome, " + name + "!";
-std::string join_msg = "[" + now + "] [system] " + name + " joined the chat";
-
-send(client_fd, welcome_msg.c_str(), welcome_msg.size(), 0);
-std::cout << join_msg << std::endl;
-broadcast_msg(client_fd, join_msg);
-
-    while (true) {
-        n = recv(client_fd, buffer, 1024, 0);
-
-        if (n == 0) {
-            std::string now = get_current_time();
-            std::string leave_msg = "[" + now + "] [system] " + name + " left the chat";
-            std::cout << leave_msg << std::endl;
-            broadcast_msg(client_fd, leave_msg);
-            remove_client(client_fd);
-            close(client_fd);
-            return;
+bool is_client_registered(int client_fd){
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    for(const auto&client: clients){
+        if(client.sock == client_fd){
+            return client.registered;
         }
-
-        if (n < 0) {
-            perror("recv");
-            std::string now = get_current_time();
-            std::string leave_msg = "[" + now + "] [system] " + name + " left the chat";
-            std::cout << leave_msg << std::endl;
-            broadcast_msg(client_fd, leave_msg);
-            remove_client(client_fd);
-            close(client_fd);
-            return;
-        }
-
-        buffer[n] = '\0';
-        std::string formatted_msg = "[" + get_current_time() + "] [" + name + "]: " + buffer;
-        std::cout << "thread " << std::this_thread::get_id()
-                  << " " << formatted_msg << std::endl;
-        broadcast_msg(client_fd, formatted_msg);
     }
+    return false;
+}
+
+void set_client_registered(int client_fd, bool value){
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    for(auto& client: clients){
+        if(client.sock == client_fd){
+            client.registered = value;
+            break;
+        }
+    }
+}
+void handle_client_event(int epoll_fd, int client_fd) {
+   char buffer[1025];
+   int n = recv(client_fd, buffer, 1024, 0);
+   if (n <= 0) {
+    if (is_client_registered(client_fd)) {
+        std::string name = get_client_name(client_fd);
+        std::string leave_msg = "[" + get_current_time() + "] [system] " + name + " left the chat\n";
+        std::cout << leave_msg;
+        broadcast_msg(client_fd, leave_msg);
+    }
+    remove_client(client_fd);
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, nullptr);
+    close(client_fd);
+    return;
+}
+   buffer[n] = '\0';
+   std::string msg(buffer);
+   if (!is_client_registered(client_fd)) {
+    if (msg.empty()) {
+        msg = "unknown";
+    }
+
+    set_client_name(client_fd, msg);
+    set_client_registered(client_fd, true);
+
+    std::string welcome_msg = "[" + get_current_time() + "] [system] Welcome, " + msg + "!\n";
+    send(client_fd, welcome_msg.c_str(), welcome_msg.size(), 0);
+
+    std::string join_msg = "[" + get_current_time() + "] [system] " + msg + " joined the chat\n";
+    std::cout << join_msg;
+    broadcast_msg(client_fd, join_msg);
+}
+  else{
+    std::string name = get_client_name(client_fd);
+    std::string formatted_msg = "[" + get_current_time() + "] [" + name + "]: " + msg + "\n";
+    std::cout << formatted_msg;
+    broadcast_msg(client_fd, formatted_msg);
+  }
 }

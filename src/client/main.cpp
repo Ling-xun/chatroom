@@ -24,6 +24,7 @@ int main() {
     std::string name;
     std::cout<<"请输入您的姓名：";
     getline(std::cin,name);
+    std::cout<<"\n";
     if(name.empty()){
         name = "unknown";
     }

@@ -82,7 +82,7 @@ if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) < 0) {
 }
 else{
         int client_fd=events[i].data.fd;
-        std::cout << "client fd " << client_fd << " is readable\n";
+        handle_client_event(epoll_fd, client_fd);
     }
 }
    
