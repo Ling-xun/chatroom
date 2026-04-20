@@ -4,6 +4,8 @@
 #include <iostream>
 #include <sys/socket.h>
 std::mutex cout_mutex;
+
+// 持续读取用户输入并发给服务器；输入 exit 时关闭发送方向。
 void send_messages(int sock){
     while(true){
         std::string msg;
@@ -18,6 +20,8 @@ void send_messages(int sock){
         send(sock, msg.c_str(),msg.size(), 0);
     }
 }
+
+// 持续接收服务器广播，并串行化终端输出，避免与输入线程互相打断。
 void recv_messages(int sock){
     while(true){
         char buffer[1025] ;
@@ -30,4 +34,3 @@ void recv_messages(int sock){
 }     
     }
 }
-
