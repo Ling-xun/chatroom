@@ -51,10 +51,11 @@ void set_client_registered(int client_fd, bool value) {
 void remove_client(int client_fd) {
     // 连接断开后，从在线列表中删除对应客户端记录。
     std::lock_guard<std::mutex> lock(clients_mutex);
-    auto it = std::find_if(clients.begin(), clients.end(),
-        [client_fd](const ClientInfo& client) {
+    auto it =
+        std::find_if(clients.begin(), clients.end(), [client_fd](const ClientInfo& client) {
             return client.sock == client_fd;
         });
+
     if (it != clients.end()) {
         clients.erase(it);
     }
