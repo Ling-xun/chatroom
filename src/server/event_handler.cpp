@@ -1,6 +1,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <cerrno>
 
 #include <iostream>
 #include <string>
@@ -14,22 +15,36 @@ void handle_client_event(int epoll_fd, int client_fd) {
     char buffer[1025];
     int n = recv(client_fd, buffer, 1024, 0);
 
-    if (n <= 0) {
-        // recv 返回 0 或负数表示客户端断开或读取失败，清理连接资源。
-        if (is_client_registered(client_fd)) {
-            std::string name = get_client_name(client_fd);
-            std::string leave_msg =
-                "[" + get_current_time() + "] [system] " + name + " left the chat\n";
-            std::cout << leave_msg;
-            broadcast_msg(client_fd, leave_msg);
-        }
+    if (n == 0) {
+    if (is_client_registered(client_fd)) {
+        std::string name = get_client_name(client_fd);
+        std::string leave_msg = "[" + get_current_time() + "] [system] " + name + " left the chat\n";
+        std::cout << leave_msg;
+        broadcast_msg(client_fd, leave_msg);
+    }
+    remove_client(client_fd);
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, nullptr);
+    close(client_fd);
+    return;
+}
 
-        remove_client(client_fd);
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, nullptr);
-        close(client_fd);
+if (n < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
         return;
     }
 
+    perror("recv");
+    if (is_client_registered(client_fd)) {
+        std::string name = get_client_name(client_fd);
+        std::string leave_msg = "[" + get_current_time() + "] [system] " + name + " left the chat\n";
+        std::cout << leave_msg;
+        broadcast_msg(client_fd, leave_msg);
+    }
+    remove_client(client_fd);
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client_fd, nullptr);
+    close(client_fd);
+    return;
+}
     buffer[n] = '\0';
     std::string msg(buffer);
 

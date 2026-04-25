@@ -11,6 +11,20 @@
 #include "server/client_manager.h"
 #include "server/event_handler.h"
 
+int set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        perror("fcntl: F_GETFL");
+        return -1;
+    }
+
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        perror("fcntl: F_SETFL");
+        return -1;
+    }
+
+    return 0;
+}
 int main() {
     // 1. 创建 TCP 监听 socket，作为服务器的入口。
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -23,10 +37,17 @@ int main() {
 
     // 3. 将 socket 绑定到指定 IP 和端口。
     bind(server_fd, (sockaddr*)&addr, sizeof(addr));
-
+     
     // 4. 开始监听客户端连接请求，等待后续 accept。
     listen(server_fd, 5);
 
+    // 5. 设置监听 socket 为非阻塞模式，确保 accept 不会阻塞。
+    if (set_nonblocking(server_fd) < 0) {
+        close(server_fd);
+        return -1;
+    }
+
+    // 6. 打印服务器启动信息，提示客户端连接。
     std::cout << "server start at port 8080" << std::endl;
 
     // 创建 epoll 实例，用于统一管理监听 socket 和所有客户端 socket 的事件。
@@ -66,11 +87,17 @@ int main() {
             if (events[i].data.fd == server_fd) {
                 // 监听 socket 可读，说明有新的客户端正在建立连接。
                 int client_fd = accept(server_fd, nullptr, nullptr);
+               
                 if (client_fd < 0) {
                     perror("accept");
                     continue;
                 }
 
+                 if (set_nonblocking(client_fd) < 0) {
+                    close(client_fd);
+                    continue;
+                }
+                
                 {
                     // 将新客户端加入全局客户端列表，便于后续广播或状态管理。
                     std::lock_guard<std::mutex> lock(clients_mutex);
