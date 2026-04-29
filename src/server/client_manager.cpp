@@ -4,6 +4,7 @@
 std::vector<ClientInfo> clients;
 std::mutex clients_mutex;
 
+
 std::string get_client_name(int client_fd) {
     // 所有对客户端列表的读写都要加锁，避免并发访问出错。
     std::lock_guard<std::mutex> lock(clients_mutex);
@@ -59,4 +60,15 @@ void remove_client(int client_fd) {
     if (it != clients.end()) {
         clients.erase(it);
     }
+}
+
+std::vector<std::string> get_online_users() {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    std::vector<std::string> online_users;
+    for (const auto& client : clients) {
+        if (client.registered) {
+            online_users.push_back(client.name);
+        }
+    }
+    return online_users;
 }

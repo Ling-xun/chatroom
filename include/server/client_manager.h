@@ -28,3 +28,5 @@ void set_client_registered(int client_fd, bool value);
 
 // 从在线客户端列表中移除指定连接。
 void remove_client(int client_fd);
+
+std::vector<std::string> get_online_users();
