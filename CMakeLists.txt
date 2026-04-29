@@ -12,6 +12,7 @@ add_executable(server
     src/server/chat_server.cpp
     src/server/client_manager.cpp
     src/server/event_handler.cpp
+    src/server/command_handler.cpp
 )
 
 add_executable(client

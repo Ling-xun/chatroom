@@ -9,6 +9,7 @@
 #include "server/chat_server.h"
 #include "server/client_manager.h"
 #include "server/event_handler.h"
+#include "server/command_handler.h"
 
 void handle_client_event(int epoll_fd, int client_fd) {
     // 读取客户端发来的数据；这里约定单次最多处理 1024 字节。
@@ -67,17 +68,7 @@ if (n < 0) {
         std::cout << join_msg;
         broadcast_msg(client_fd, join_msg);
     } else {
-        if(msg=="/users"){
-            std::vector<std::string> online_users = get_online_users();
-            std::string users_msg = "[" + get_current_time() + "] [system] Online users: ";
-        for (size_t i = 0; i < online_users.size(); i++) {
-               users_msg += online_users[i];
-            if (i + 1 < online_users.size()) {
-                users_msg += ", ";
-            }
-        }
-            users_msg += "\n";
-            send(client_fd, users_msg.c_str(), users_msg.size(), 0);
+        if (handle_command(client_fd, msg)) {
             return;
         }
         // 已注册用户的后续消息会附带时间戳和昵称后再广播出去。
