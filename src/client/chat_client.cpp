@@ -1,5 +1,7 @@
 #include <sys/socket.h>
+#include <arpa/inet.h>
 
+#include <cstdint>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -16,28 +18,35 @@ std::mutex cout_mutex;
 
 }  // namespace
 
-// 持续读取用户输入并发给服务器；输入 exit 时关闭发送方向。
-void send_messages(int sock) {
-    while (true) {
-        std::string msg;
-        std::getline(std::cin, msg);
+bool send_all(int sock, const char* data, size_t len) {
+    size_t total_sent = 0;
 
-        // 空输入不发送，避免聊天室里出现空消息。
-        if (msg.empty()) {
-            continue;
+    while (total_sent < len) {
+        ssize_t n = send(sock, data + total_sent, len - total_sent, 0);
+
+        if (n <= 0) {
+            return false;
         }
 
-        // 输入 exit 表示用户主动退出。
-        //
-        // shutdown(SHUT_WR) 只关闭写方向：客户端不再向服务器发送数据，
-        // 但接收线程仍可读到服务器在连接关闭前发来的最后消息。
-        if (msg == "exit") {
-            shutdown(sock, SHUT_WR);
-            break;
-        }
-
-        send(sock, msg.c_str(), msg.size(), 0);
+        total_sent += n;
     }
+
+    return true;
+}
+
+bool send_message(int sock, const std::string& msg) {
+    uint32_t body_len = msg.size();
+    uint32_t net_len = htonl(body_len);
+
+    if (!send_all(sock, reinterpret_cast<const char*>(&net_len), sizeof(net_len))) {
+        return false;
+    }
+
+    if (!send_all(sock, msg.data(), msg.size())) {
+        return false;
+    }
+
+    return true;
 }
 
 // 持续接收服务器广播，并串行化终端输出，避免与输入线程互相打断。
