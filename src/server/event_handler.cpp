@@ -86,16 +86,19 @@ void handle_client_event(int epoll_fd, int client_fd) {
     }
 
     if (n < 0) {
-        // 非阻塞 socket 在暂时没有数据可读时会返回 EAGAIN/EWOULDBLOCK。
-        // 这不算断线，直接等待下一次 epoll 通知即可。
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return;
-        }
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        return;
+    }
 
-        perror("recv");
+    if (errno == ECONNRESET) {
         disconnect_client(epoll_fd, client_fd, true);
         return;
     }
+
+    perror("recv");
+    disconnect_client(epoll_fd, client_fd, true);
+    return;
+}
 
     if (!append_to_client_buffer(client_fd, buffer, n)) {
         return;
