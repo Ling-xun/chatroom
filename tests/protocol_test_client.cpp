@@ -89,6 +89,8 @@ int main() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
+    shutdown(sock, SHUT_WR);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     close(sock);
     return 0;
 }
