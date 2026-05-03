@@ -4,6 +4,8 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <arpa/inet.h>
+#include <cstring>
 
 // 保存所有当前连接到服务器的客户端。
 // 这个示例项目使用一个全局列表，让事件处理、命令处理和广播逻辑都能共享在线状态。
@@ -88,4 +90,51 @@ std::vector<std::string> get_online_users() {
         }
     }
     return online_users;
+}
+
+bool append_to_client_buffer(int client_fd, const char* data, size_t len) {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+
+    for (auto& client : clients) {
+        if (client.sock == client_fd) {
+            client.recv_buffer.append(data, len);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool extract_message_from_client_buffer(int client_fd, std::string& msg) {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+
+    constexpr uint32_t kMaxMessageSize = 4096;
+
+    for (auto& client : clients) {
+        if (client.sock == client_fd) {
+            if (client.recv_buffer.size() < sizeof(uint32_t)) {
+                return false;
+            }
+
+            uint32_t net_len = 0;
+            std::memcpy(&net_len, client.recv_buffer.data(), sizeof(net_len));
+
+            uint32_t body_len = ntohl(net_len);
+
+            if (body_len > kMaxMessageSize) {
+                return false;
+            }
+
+            if (client.recv_buffer.size() < sizeof(uint32_t) + body_len) {
+                return false;
+            }
+
+            msg = client.recv_buffer.substr(sizeof(uint32_t), body_len);
+            client.recv_buffer.erase(0, sizeof(uint32_t) + body_len);
+
+            return true;
+        }
+    }
+
+    return false;
 }

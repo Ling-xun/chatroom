@@ -3,6 +3,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <cstddef>
 
 // 保存单个客户端的连接状态与聊天身份信息。
 struct ClientInfo {
@@ -14,6 +15,8 @@ struct ClientInfo {
 
     // 是否已经完成昵称注册；未注册时第一条消息会被当作昵称。
     bool registered;
+
+    std::string recv_buffer;
 };
 
 // 在线客户端列表，由服务端事件循环和消息处理逻辑共享。
@@ -39,3 +42,7 @@ void remove_client(int client_fd);
 
 // 获取所有已经完成注册的在线用户昵称。
 std::vector<std::string> get_online_users();
+
+bool append_to_client_buffer(int client_fd,const char* msg,size_t len);
+
+bool extract_message_from_client_buffer(int client_fd,std::string& msg);

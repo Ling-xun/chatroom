@@ -36,36 +36,7 @@ void disconnect_client(int epoll_fd, int client_fd, bool announce) {
     close(client_fd);
 }
 
-}  // namespace
-
-void handle_client_event(int epoll_fd, int client_fd) {
-    // 读取客户端发来的数据。
-    //
-    // 多预留 1 个字节用于写入 '\0'，方便后面把 C 风格缓冲区转成 std::string。
-    char buffer[kBufferSize + 1];
-    int n = recv(client_fd, buffer, kBufferSize, 0);
-
-    if (n == 0) {
-        // recv 返回 0 表示对端已经正常关闭连接。
-        disconnect_client(epoll_fd, client_fd, true);
-        return;
-    }
-
-    if (n < 0) {
-        // 非阻塞 socket 在暂时没有数据可读时会返回 EAGAIN/EWOULDBLOCK。
-        // 这不算断线，直接等待下一次 epoll 通知即可。
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            return;
-        }
-
-        perror("recv");
-        disconnect_client(epoll_fd, client_fd, true);
-        return;
-    }
-
-    buffer[n] = '\0';
-    std::string msg(buffer);
-
+void process_client_message(int client_fd, std::string msg) {
     if (!is_client_registered(client_fd)) {
         // 客户端接入后的第一条消息被当作昵称注册。
         if (msg.empty()) {
@@ -96,5 +67,42 @@ void handle_client_event(int epoll_fd, int client_fd) {
             "[" + get_current_time() + "] [" + name + "]: " + msg + "\n";
         std::cout << formatted_msg;
         broadcast_msg(client_fd, formatted_msg);
+    }
+}
+
+}  // namespace
+
+void handle_client_event(int epoll_fd, int client_fd) {
+    // 读取客户端发来的数据。
+    //
+    // 多预留 1 个字节用于写入 '\0'，方便后面把 C 风格缓冲区转成 std::string。
+    char buffer[kBufferSize + 1];
+    int n = recv(client_fd, buffer, kBufferSize, 0);
+
+    if (n == 0) {
+        // recv 返回 0 表示对端已经正常关闭连接。
+        disconnect_client(epoll_fd, client_fd, true);
+        return;
+    }
+
+    if (n < 0) {
+        // 非阻塞 socket 在暂时没有数据可读时会返回 EAGAIN/EWOULDBLOCK。
+        // 这不算断线，直接等待下一次 epoll 通知即可。
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return;
+        }
+
+        perror("recv");
+        disconnect_client(epoll_fd, client_fd, true);
+        return;
+    }
+
+    if (!append_to_client_buffer(client_fd, buffer, n)) {
+        return;
+    }
+
+    std::string msg;
+    while (extract_message_from_client_buffer(client_fd, msg)) {
+        process_client_message(client_fd, msg);
     }
 }

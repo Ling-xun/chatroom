@@ -164,7 +164,7 @@ int main() {
                     // name 暂时为空，registered 为 false。客户端发送的第一条消息会在
                     // handle_client_event 中被当作昵称，之后才切换为正式聊天消息。
                     std::lock_guard<std::mutex> lock(clients_mutex);
-                    clients.push_back({client_fd, "", false});
+                    clients.push_back({client_fd, "", false, ""});
                 }
 
                 // 把新客户端注册到 epoll，后续收到消息时会触发 EPOLLIN。
