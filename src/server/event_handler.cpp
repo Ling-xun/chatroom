@@ -38,6 +38,7 @@ void disconnect_client(int epoll_fd, int client_fd, bool announce) {
 }
 
 void process_client_message(int client_fd, std::string msg) {
+    // 未注册的连接还没有昵称，因此把它发来的第一条完整消息作为昵称。
     if (!is_client_registered(client_fd)) {
         // 客户端接入后的第一条消息被当作昵称注册。
         if (msg.empty()) {
@@ -69,6 +70,7 @@ void process_client_message(int client_fd, std::string msg) {
         std::cout << formatted_msg;
         broadcast_msg(client_fd, formatted_msg);
 
+        // 广播成功后再尝试写入数据库。当前代码不因保存失败而影响在线聊天流程。
         g_mysql_storage.save_message(name, msg, "chat");
     }
 }
@@ -78,7 +80,8 @@ void process_client_message(int client_fd, std::string msg) {
 void handle_client_event(int epoll_fd, int client_fd) {
     // 读取客户端发来的数据。
     //
-    // 多预留 1 个字节用于写入 '\0'，方便后面把 C 风格缓冲区转成 std::string。
+    // 多预留 1 个字节，方便后续如果需要时兼容 C 风格字符串处理。
+    // 当前实际按 recv 返回的 n 字节追加到客户端缓冲区，不依赖 '\0' 结尾。
     char buffer[kBufferSize + 1];
     int n = recv(client_fd, buffer, kBufferSize, 0);
 
@@ -89,25 +92,31 @@ void handle_client_event(int epoll_fd, int client_fd) {
     }
 
     if (n < 0) {
-    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        return;
-    }
+        // 非阻塞 socket 暂时没有可读数据，不属于错误，等待下一次 epoll 通知即可。
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return;
+        }
 
-    if (errno == ECONNRESET) {
+        // 客户端异常断开连接时，清理本地保存的客户端状态。
+        if (errno == ECONNRESET) {
+            disconnect_client(epoll_fd, client_fd, true);
+            return;
+        }
+
+        // 其他 recv 错误也视为当前连接不可继续使用。
+        perror("recv");
         disconnect_client(epoll_fd, client_fd, true);
         return;
     }
 
-    perror("recv");
-    disconnect_client(epoll_fd, client_fd, true);
-    return;
-}
-
+    // 将本次读取到的原始字节追加到该客户端的协议缓冲区。
+    // TCP 是字节流，单次 recv 可能拿到半条、多条或混合消息，因此需要缓冲后按协议拆包。
     if (!append_to_client_buffer(client_fd, buffer, n)) {
         return;
     }
 
     std::string msg;
+    // 从缓冲区中不断提取完整消息，直到剩余内容不足以组成下一条消息。
     while (extract_message_from_client_buffer(client_fd, msg)) {
         process_client_message(client_fd, msg);
     }

@@ -96,9 +96,12 @@ int main() {
 
     // 6. 打印服务器启动信息，提示客户端连接。
     std::cout << "server start at port " << kServerPort << std::endl;
+
+    // 初始化消息持久化连接。连接失败时只关闭保存功能，服务器仍继续提供聊天服务。
     if (!g_mysql_storage.connect()) {
-    std::cerr << "mysql connect failed, messages will not be saved" << std::endl;
-}
+        std::cerr << "mysql connect failed, messages will not be saved" << std::endl;
+    }
+
     // 7. 创建 epoll 实例，用于统一管理监听 socket 和所有客户端 socket 的事件。
     //
     // 服务器不再为每个连接创建单独阻塞等待点，而是让 epoll_wait 一次性返回
@@ -177,6 +180,8 @@ int main() {
 
                 if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0) {
                     perror("epoll_ctl: client_fd");
+
+                    // 注册 epoll 失败时，该客户端无法被事件循环管理，需要立即清理。
                     close(client_fd);
                     remove_client(client_fd);
                     continue;
