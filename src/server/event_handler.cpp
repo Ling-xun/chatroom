@@ -10,6 +10,7 @@
 #include "server/chat_server.h"
 #include "server/client_manager.h"
 #include "server/event_handler.h"
+#include "storage/mysql_storage.h"
 
 namespace {
 
@@ -67,6 +68,8 @@ void process_client_message(int client_fd, std::string msg) {
             "[" + get_current_time() + "] [" + name + "]: " + msg + "\n";
         std::cout << formatted_msg;
         broadcast_msg(client_fd, formatted_msg);
+
+        g_mysql_storage.save_message(name, msg, "chat");
     }
 }
 

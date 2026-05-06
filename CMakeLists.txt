@@ -13,6 +13,7 @@ add_executable(server
     src/server/client_manager.cpp
     src/server/event_handler.cpp
     src/server/command_handler.cpp
+    src/storage/mysql_storage.cpp
 )
 
 add_executable(client
@@ -30,5 +31,6 @@ target_link_libraries(protocol_test_client PRIVATE Threads::Threads)
 target_include_directories(server PRIVATE include)
 target_include_directories(client PRIVATE include)
 
-target_link_libraries(server PRIVATE Threads::Threads)
 target_link_libraries(client PRIVATE Threads::Threads)
+
+target_link_libraries(server PRIVATE Threads::Threads mysqlclient)

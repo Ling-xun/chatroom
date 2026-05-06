@@ -11,6 +11,7 @@
 #include "server/chat_server.h"
 #include "server/client_manager.h"
 #include "server/event_handler.h"
+#include "storage/mysql_storage.h"
 
 namespace {
 
@@ -95,7 +96,9 @@ int main() {
 
     // 6. 打印服务器启动信息，提示客户端连接。
     std::cout << "server start at port " << kServerPort << std::endl;
-
+    if (!g_mysql_storage.connect()) {
+    std::cerr << "mysql connect failed, messages will not be saved" << std::endl;
+}
     // 7. 创建 epoll 实例，用于统一管理监听 socket 和所有客户端 socket 的事件。
     //
     // 服务器不再为每个连接创建单独阻塞等待点，而是让 epoll_wait 一次性返回
