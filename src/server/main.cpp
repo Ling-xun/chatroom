@@ -13,6 +13,17 @@
 #include "server/event_handler.h"
 #include "storage/mysql_storage.h"
 
+// main.cpp
+//
+// 聊天室服务端入口文件。
+//
+// 主要职责：
+// 1. 创建、绑定并监听 TCP socket。
+// 2. 初始化 MySQL 存储连接。
+// 3. 创建 epoll 实例，并把监听 socket 与客户端 socket 加入事件循环。
+// 4. 接受新连接，初始化 ClientInfo。
+// 5. 将客户端可读事件交给 event_handler 处理。
+
 namespace {
 
 // 服务端监听端口，客户端需要连接到这个端口才能进入聊天室。
@@ -31,12 +42,14 @@ constexpr int kMaxEvents = 1024;
 // epoll 通常会和非阻塞 socket 搭配使用：当某次读写暂时无法完成时，
 // 系统调用会立即返回，而不是把整个服务器事件循环卡住。
 int set_nonblocking(int fd) {
+    // 先读取当前 fd flags，避免覆盖系统或其他代码已经设置过的标志位。
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) {
         perror("fcntl: F_GETFL");
         return -1;
     }
 
+    // 在原 flags 基础上追加 O_NONBLOCK。
     if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         perror("fcntl: F_SETFL");
         return -1;
@@ -147,6 +160,9 @@ int main() {
         for (int i = 0; i < nfds; i++) {
             if (events[i].data.fd == server_fd) {
                 // 监听 socket 可读，说明有新的客户端正在建立连接。
+                //
+                // 当前一次事件只 accept 一个连接；如果短时间大量连接涌入，剩余连接会在
+                // 后续 epoll 通知中继续处理。
                 int client_fd = accept(server_fd, nullptr, nullptr);
                 if (client_fd < 0) {
                     // 非阻塞 accept 在没有可取连接时会返回 EAGAIN/EWOULDBLOCK。

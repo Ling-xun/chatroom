@@ -1,5 +1,9 @@
 #pragma once
 
+// event_handler.h
+//
+// 声明服务端客户端事件处理入口，用于处理 epoll 检测到的客户端可读事件。
+
 // 处理某个客户端 socket 的可读事件，包括注册、收消息和断开连接。
 //
 // epoll_fd 用于在连接断开时把客户端 fd 从 epoll 中移除；

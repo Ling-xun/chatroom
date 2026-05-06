@@ -2,6 +2,15 @@
 
 #include <iostream>
 
+// mysql_storage.cpp
+//
+// 该文件封装聊天室消息写入 MySQL 的细节：
+// 1. 建立和释放 MySQL C API 连接。
+// 2. 对用户输入进行 SQL 转义。
+// 3. 将聊天消息插入 messages 表。
+//
+// 聊天业务层只需要调用 g_mysql_storage.save_message(...)，不需要关心具体 SQL。
+
 // 全局 MySQL 存储对象，供服务器事件处理逻辑保存聊天消息。
 // 当前服务器主循环是单线程事件处理模型，因此这里暂时没有额外加锁。
 MySQLStorage g_mysql_storage;
@@ -19,6 +28,7 @@ std::string escape_string(MYSQL* conn, const std::string& input) {
     // MySQL 转义后的最长长度为原字符串长度的 2 倍再加结尾 '\0' 空间。
     output.resize(input.size() * 2 + 1);
 
+    // mysql_real_escape_string 会把 input 中需要转义的字符写入 output，并返回实际长度。
     unsigned long len = mysql_real_escape_string(
         conn,
         output.data(),
@@ -43,6 +53,7 @@ MySQLStorage::~MySQLStorage() {
 }
 
 bool MySQLStorage::connect() {
+    // 如果未来支持重连，这里需要先处理已有 conn_；当前程序只在启动时连接一次。
     // 创建 MySQL 连接句柄。此时只是初始化客户端结构，还没有连接到数据库服务。
     conn_ = mysql_init(nullptr);
     if (conn_ == nullptr) {
@@ -80,6 +91,7 @@ bool MySQLStorage::save_message(const std::string& sender,
                                 const std::string& content,
                                 const std::string& message_type) {
     // 数据库尚未连接时直接返回失败，避免对空连接执行 MySQL API。
+    // 上层聊天流程不会因为保存失败而中断在线消息广播。
     if (conn_ == nullptr) {
         return false;
     }

@@ -5,6 +5,13 @@
 #include <vector>
 #include <cstddef>
 
+// client_manager.h
+//
+// 声明服务端客户端状态管理接口：
+// - 维护在线客户端列表。
+// - 查询和修改客户端昵称、注册状态。
+// - 维护每个客户端的 TCP 接收缓冲区，支持长度前缀协议拆包。
+
 // 保存单个客户端的连接状态与聊天身份信息。
 struct ClientInfo {
     // 客户端对应的 socket 文件描述符。
@@ -16,6 +23,7 @@ struct ClientInfo {
     // 是否已经完成昵称注册；未注册时第一条消息会被当作昵称。
     bool registered;
 
+    // 该客户端尚未拆包完成的原始接收数据。
     std::string recv_buffer;
 };
 
@@ -43,6 +51,8 @@ void remove_client(int client_fd);
 // 获取所有已经完成注册的在线用户昵称。
 std::vector<std::string> get_online_users();
 
+// 将本次 recv 得到的原始字节追加到指定客户端的接收缓冲区。
 bool append_to_client_buffer(int client_fd,const char* msg,size_t len);
 
+// 从指定客户端接收缓冲区中尝试提取一条完整消息。
 bool extract_message_from_client_buffer(int client_fd,std::string& msg);

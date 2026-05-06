@@ -9,6 +9,16 @@
 
 #include "client/chat_client.h"
 
+// main.cpp
+//
+// 聊天室客户端入口文件。
+//
+// 主要流程：
+// 1. 创建 TCP socket 并连接本机服务端。
+// 2. 读取用户昵称，并作为第一条协议消息发给服务端完成注册。
+// 3. 启动发送线程读取终端输入，启动接收线程打印服务端广播。
+// 4. 用户输入 exit 或标准输入结束时关闭写端并退出。
+
 namespace {
 
 // 客户端默认连接本机服务器；如果服务端部署到其他机器，只需要改这里。
@@ -67,6 +77,7 @@ int main() {
         while (true) {
             std::string msg;
             if (!getline(std::cin, msg)) {
+                // 标准输入结束时关闭 socket 写方向，通知服务端本客户端不再发送数据。
                 shutdown(sock, SHUT_WR);
                 break;
             }
@@ -78,10 +89,12 @@ int main() {
 
             // 输入 exit 表示用户主动退出。
             if (msg == "exit") {
+                // 只关闭写方向，让接收线程仍有机会读到服务端最后返回的数据或关闭通知。
                 shutdown(sock, SHUT_WR);
                 break;
             }
 
+            // 普通聊天内容按长度前缀协议发送给服务端。
            if (!send_message(sock, msg)) {
                 std::cerr << "send message failed" << std::endl;
                 break;
