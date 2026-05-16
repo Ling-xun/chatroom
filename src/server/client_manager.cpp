@@ -1,18 +1,20 @@
 #include "server/client_manager.h"
 
+#include <cerrno>
 #include <algorithm>
 #include <mutex>
 #include <string>
 #include <vector>
-#include <arpa/inet.h>
-#include <cstring>
+#include <sys/socket.h>
+
+#include "common/protocol.h"
 
 // client_manager.cpp
 //
 // 该文件负责维护服务端眼中的“在线客户端状态”：
 // 1. 保存每个已连接客户端的 socket、昵称、注册状态和接收缓冲区。
 // 2. 提供按 socket 查询/修改客户端信息的辅助函数。
-// 3. 为 TCP 字节流协议维护 per-client 缓冲区，并从中拆出完整消息。
+// 3. 为 TCP 字节流协议维护 per-client 收发缓冲区，并从中拆出完整消息。
 //
 // 注意：这里不负责 accept 新连接、epoll 事件处理、消息广播或数据库落库；
 // 这些逻辑分别在 chat_server/event_handler/command_handler 等模块中完成。
@@ -30,6 +32,12 @@ std::vector<ClientInfo> clients;
 // 可以保证访问约定清晰，也方便以后把广播、命令处理或存储等流程拆到其他线程时复用。
 // 只要访问 clients 或 ClientInfo 内部字段，都应持有这把锁。
 std::mutex clients_mutex;
+
+namespace {
+
+constexpr size_t kMaxSendBufferSize = 1024 * 1024;
+
+}  // namespace
 
 // 根据 socket 文件描述符查询客户端昵称。
 //
@@ -174,48 +182,81 @@ bool append_to_client_buffer(int client_fd, const char* data, size_t len) {
 // - 成功提取时写入消息体内容，不包含 4 字节长度头。
 // - 数据不完整、消息过大或客户端不存在时保持调用方可忽略的状态。
 //
-// 返回 true 表示成功取出一条完整消息；返回 false 表示当前暂时没有可处理的完整消息。
-bool extract_message_from_client_buffer(int client_fd, std::string& msg) {
+// 返回 Message 表示成功取出一条完整消息，NeedMoreData 表示数据暂不完整，
+// ProtocolError 表示协议异常，调用方应断开该连接。
+ClientMessageResult extract_message_from_client_buffer(int client_fd, std::string& msg) {
     std::lock_guard<std::mutex> lock(clients_mutex);
-
-    // 防止异常客户端声明一个超大长度，导致服务端等待/累积过多内存。
-    // 当前单条聊天消息最大允许 4096 字节。
-    constexpr uint32_t kMaxMessageSize = 4096;
 
     for (auto& client : clients) {
         if (client.sock == client_fd) {
-            // 还没有凑齐 4 字节长度头，无法知道消息体大小，继续等待后续 recv。
-            if (client.recv_buffer.size() < sizeof(uint32_t)) {
+            ProtocolExtractResult result = extract_protocol_message(client.recv_buffer, msg);
+            if (result == ProtocolExtractResult::Message) {
+                return ClientMessageResult::Message;
+            }
+
+            if (result == ProtocolExtractResult::ProtocolError) {
+                return ClientMessageResult::ProtocolError;
+            }
+
+            return ClientMessageResult::NeedMoreData;
+        }
+    }
+
+    return ClientMessageResult::NeedMoreData;
+}
+
+bool queue_client_message(int client_fd, const std::string& msg) {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    std::string packet = pack_protocol_message(msg);
+
+    for (auto& client : clients) {
+        if (client.sock == client_fd) {
+            if (client.send_buffer.size() + packet.size() > kMaxSendBufferSize) {
                 return false;
             }
 
-            // 从缓冲区开头读取网络字节序的长度头。
-            // 使用 memcpy 而不是强制指针转换，可以避免未对齐访问带来的未定义行为。
-            uint32_t net_len = 0;
-            std::memcpy(&net_len, client.recv_buffer.data(), sizeof(net_len));
-
-            // 将网络字节序转换为主机字节序，得到消息体实际长度。
-            uint32_t body_len = ntohl(net_len);
-
-            // 长度超过上限说明协议数据异常。这里返回 false，不消费缓冲区；
-            // 上层当前会停止本轮处理，未来可以扩展为直接断开该客户端。
-            if (body_len > kMaxMessageSize) {
-                return false;
-            }
-
-            // 长度头已经有了，但消息体还没接收完整，继续等待更多数据。
-            if (client.recv_buffer.size() < sizeof(uint32_t) + body_len) {
-                return false;
-            }
-
-            // 截取完整消息体，并从缓冲区中移除“长度头 + 消息体”。
-            // 如果缓冲区后面已经粘着下一条消息，它会被保留下来，供下一次循环继续提取。
-            msg = client.recv_buffer.substr(sizeof(uint32_t), body_len);
-            client.recv_buffer.erase(0, sizeof(uint32_t) + body_len);
-
+            client.send_buffer.append(packet);
             return true;
         }
     }
 
     return false;
+}
+
+ClientFlushResult flush_client_send_buffer(int client_fd) {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+
+    for (auto& client : clients) {
+        if (client.sock != client_fd) {
+            continue;
+        }
+
+        while (!client.send_buffer.empty()) {
+            ssize_t n = send(
+                client.sock,
+                client.send_buffer.data(),
+                client.send_buffer.size(),
+                MSG_NOSIGNAL
+            );
+
+            if (n > 0) {
+                client.send_buffer.erase(0, static_cast<size_t>(n));
+                continue;
+            }
+
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                return ClientFlushResult::Pending;
+            }
+
+            if (n < 0 && (errno == ECONNRESET || errno == EPIPE)) {
+                return ClientFlushResult::Disconnected;
+            }
+
+            return ClientFlushResult::Error;
+        }
+
+        return ClientFlushResult::Complete;
+    }
+
+    return ClientFlushResult::Disconnected;
 }

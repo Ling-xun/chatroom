@@ -3,13 +3,12 @@
 #include <unistd.h>
 
 #include <chrono>
-#include <cstdint>
-#include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
 
 #include "common/config.h"
+#include "common/protocol.h"
 
 // protocol_test_client.cpp
 //
@@ -39,20 +38,6 @@ bool send_all(int sock, const char* data, size_t len) {
     }
 
     return true;
-}
-
-// 将一条文本消息打包为服务端协议所需格式：
-//   [4 字节网络字节序长度][消息体]
-std::string pack_message(const std::string& msg) {
-    uint32_t body_len = msg.size();
-    uint32_t net_len = htonl(body_len);
-
-    std::string packet;
-    // 长度头是二进制数据，直接 append 4 个字节；随后追加文本消息体。
-    packet.append(reinterpret_cast<const char*>(&net_len), sizeof(net_len));
-    packet.append(msg);
-
-    return packet;
 }
 
 }  // namespace
@@ -85,7 +70,7 @@ int main() {
     // 1. 先注册昵称。
     //
     // 服务端把每个新连接的第一条完整消息当作昵称，因此测试客户端先发送 ProtoTester。
-    std::string name_packet = pack_message("ProtoTester");
+    std::string name_packet = pack_protocol_message("ProtoTester");
     send_all(sock, name_packet.data(), name_packet.size());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -93,7 +78,8 @@ int main() {
     // 2. 粘包测试：两条完整消息一次性发出。
     //
     // 如果服务端拆包正确，应该能连续处理 sticky-1 和 sticky-2 两条聊天消息。
-    std::string sticky_packet = pack_message("sticky-1") + pack_message("sticky-2");
+    std::string sticky_packet =
+        pack_protocol_message("sticky-1") + pack_protocol_message("sticky-2");
     send_all(sock, sticky_packet.data(), sticky_packet.size());
     std::cout << "sent sticky packet test\n";
 
@@ -102,7 +88,7 @@ int main() {
     // 3. 半包测试：一条消息拆成两次发送。
     //
     // 服务端第一次只收到部分协议包时不应该处理；第二次补齐后才应输出完整消息。
-    std::string half_packet = pack_message("half-packet-message");
+    std::string half_packet = pack_protocol_message("half-packet-message");
 
     // split_pos 故意落在协议包中间，模拟网络层任意切分 TCP 字节流的情况。
     size_t split_pos = 6;

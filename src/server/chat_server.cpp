@@ -1,5 +1,4 @@
-#include <arpa/inet.h>
-#include <sys/socket.h>
+#include <sys/epoll.h>
 
 #include <ctime>
 #include <iostream>
@@ -35,6 +34,23 @@ std::string get_current_time() {
     return std::string(time_str);
 }
 
+bool send_msg_to_client(int epoll_fd, int client_fd, const std::string& msg) {
+    if (!queue_client_message(client_fd, msg)) {
+        return false;
+    }
+
+    epoll_event event{};
+    event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
+    event.data.fd = client_fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client_fd, &event) < 0) {
+        perror("epoll_ctl: enable EPOLLOUT");
+        return false;
+    }
+
+    return true;
+}
+
 // 向除发送者之外的所有在线客户端广播消息。
 //
 // sender_fd 用来标识消息来源：
@@ -42,27 +58,22 @@ std::string get_current_time() {
 // - 系统加入/离开提示也会跳过对应客户端，避免语义重复。
 //
 // msg 应该已经由调用方拼好换行、时间戳、昵称等展示内容。
-void broadcast_msg(int sender_fd, const std::string& msg) {
-    std::vector<ClientInfo> snapshot;
+void broadcast_msg(int epoll_fd, int sender_fd, const std::string& msg) {
+    std::vector<int> recipient_fds;
 
     {
-        // 广播时先复制一份客户端快照，避免发送过程中长期占用互斥锁。
+        // 广播时先复制一份 fd 快照，避免发送过程中长期占用互斥锁。
         //
-        // send 可能因为网络缓冲区、对端状态等原因耗时或失败。如果一直持锁发送，
-        // 其他线程/流程就无法查询或更新在线列表。复制后释放锁，可以把锁的持有时间
-        // 控制在非常短的范围内。
+        // 真正的 socket 写入由 EPOLLOUT 触发，当前这里只负责把消息加入发送缓冲区。
         std::lock_guard<std::mutex> lock(clients_mutex);
-        snapshot = clients;
+        for (const auto& client : clients) {
+            if (client.sock != sender_fd) {
+                recipient_fds.push_back(client.sock);
+            }
+        }
     }
 
-    for (const auto& client : snapshot) {
-        if (client.sock != sender_fd) {
-            // 这里直接发送原始文本，不再附加长度头，因为服务端发给客户端的展示消息
-            // 当前按普通文本流处理，客户端 recv 后直接打印。
-            //
-            // send 返回值当前被忽略：如果连接已经异常，后续 recv/epoll 流程会统一发现
-            // 并清理该客户端。对于简单聊天室，这样可以让广播逻辑保持轻量。
-            send(client.sock, msg.c_str(), msg.size(), 0);
-        }
+    for (int client_fd : recipient_fds) {
+        send_msg_to_client(epoll_fd, client_fd, msg);
     }
 }

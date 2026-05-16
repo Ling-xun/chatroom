@@ -1,5 +1,3 @@
-#include <sys/socket.h>
-
 #include <string>
 #include <vector>
 
@@ -23,11 +21,8 @@ namespace {
 const std::string kRenamePrefix = "/rename ";
 
 // 向指定客户端发送一条已经拼好的文本。
-//
-// 当前项目所有服务端提示都直接通过 socket 写回客户端。该辅助函数只包一层 send，
-// 让命令处理主体不用反复写 c_str()/size()。
-void send_to_client(int client_fd, const std::string& msg) {
-    send(client_fd, msg.c_str(), msg.size(), 0);
+void send_to_client(int epoll_fd, int client_fd, const std::string& msg) {
+    send_msg_to_client(epoll_fd, client_fd, msg);
 }
 
 }  // namespace
@@ -41,7 +36,7 @@ void send_to_client(int client_fd, const std::string& msg) {
 //
 // 对未知的 "/" 开头文本也返回 true，并给客户端提示“未知命令”，避免用户输错命令时
 // 被当作普通聊天内容广播出去。
-bool handle_command(int client_fd, const std::string& msg) {
+bool handle_command(int epoll_fd, int client_fd, const std::string& msg) {
     // /users：只回复当前客户端，展示所有已经注册昵称的在线用户。
     if (msg == "/users") {
         // 在线列表来自 client_manager，只包含 registered == true 的用户。
@@ -58,7 +53,7 @@ bool handle_command(int client_fd, const std::string& msg) {
         }
 
         users_msg += "\n";
-        send_to_client(client_fd, users_msg);
+        send_to_client(epoll_fd, client_fd, users_msg);
         return true;
     }
 
@@ -70,7 +65,7 @@ bool handle_command(int client_fd, const std::string& msg) {
             "/help - show command help\n"
             "/rename <new_name> - change your name\n";
 
-        send_to_client(client_fd, help_msg);
+        send_to_client(epoll_fd, client_fd, help_msg);
         return true;
     }
 
@@ -84,7 +79,7 @@ bool handle_command(int client_fd, const std::string& msg) {
             // 只有命令没有参数时，告诉当前用户正确用法；不广播错误输入。
             std::string err =
                 "[" + get_current_time() + "] [system] Usage: /rename <new_name>\n";
-            send_to_client(client_fd, err);
+            send_to_client(epoll_fd, client_fd, err);
             return true;
         }
 
@@ -95,12 +90,12 @@ bool handle_command(int client_fd, const std::string& msg) {
         // 当前用户收到确认消息，其他用户收到改名通知。
         std::string self_msg =
             "[" + get_current_time() + "] [system] You changed your name to " + new_name + "\n";
-        send_to_client(client_fd, self_msg);
+        send_to_client(epoll_fd, client_fd, self_msg);
 
         std::string notify_msg =
             "[" + get_current_time() + "] [system] " + old_name + " changed name to " + new_name +
             "\n";
-        broadcast_msg(client_fd, notify_msg);
+        broadcast_msg(epoll_fd, client_fd, notify_msg);
 
         return true;
     }
@@ -111,7 +106,7 @@ bool handle_command(int client_fd, const std::string& msg) {
         std::string unknown_msg =
             "[" + get_current_time() + "] [system] Unknown command. Type /help for commands.\n";
 
-        send_to_client(client_fd, unknown_msg);
+        send_to_client(epoll_fd, client_fd, unknown_msg);
         return true;
     }
 

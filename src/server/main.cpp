@@ -184,12 +184,12 @@ int main() {
                     // name 暂时为空，registered 为 false。客户端发送的第一条消息会在
                     // handle_client_event 中被当作昵称，之后才切换为正式聊天消息。
                     std::lock_guard<std::mutex> lock(clients_mutex);
-                    clients.push_back({client_fd, "", false, ""});
+                    clients.push_back({client_fd, "", false, "", ""});
                 }
 
                 // 把新客户端注册到 epoll，后续收到消息时会触发 EPOLLIN。
                 epoll_event client_event{};
-                client_event.events = EPOLLIN;
+                client_event.events = EPOLLIN | EPOLLRDHUP;
                 client_event.data.fd = client_fd;
 
                 if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event) < 0) {
@@ -203,7 +203,7 @@ int main() {
             } else {
                 // 普通客户端 socket 触发事件，交给专门的事件处理函数处理。
                 int client_fd = events[i].data.fd;
-                handle_client_event(epoll_fd, client_fd);
+                handle_client_event(epoll_fd, client_fd, events[i].events);
             }
         }
     }

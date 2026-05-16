@@ -40,7 +40,7 @@ void disconnect_client(int epoll_fd, int client_fd, bool announce) {
             "[" + get_current_time() + "] [system] " + name + " left the chat\n";
 
         std::cout << leave_msg;
-        broadcast_msg(client_fd, leave_msg);
+        broadcast_msg(epoll_fd, client_fd, leave_msg);
     }
 
     // 从业务在线列表、epoll 监听集合和系统 fd 表中依次移除。
@@ -54,10 +54,36 @@ void disconnect_client(int epoll_fd, int client_fd, bool announce) {
     close(client_fd);
 }
 
+void disable_client_write_event(int epoll_fd, int client_fd) {
+    epoll_event event{};
+    event.events = EPOLLIN | EPOLLRDHUP;
+    event.data.fd = client_fd;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client_fd, &event) < 0) {
+        perror("epoll_ctl: disable EPOLLOUT");
+    }
+}
+
+bool handle_client_output(int epoll_fd, int client_fd) {
+    ClientFlushResult result = flush_client_send_buffer(client_fd);
+
+    if (result == ClientFlushResult::Complete) {
+        disable_client_write_event(epoll_fd, client_fd);
+        return true;
+    }
+
+    if (result == ClientFlushResult::Pending) {
+        return true;
+    }
+
+    disconnect_client(epoll_fd, client_fd, true);
+    return false;
+}
+
 // 处理已经从协议缓冲区拆出来的一条完整应用层消息。
 //
 // 此时 msg 已经不含 4 字节长度前缀，可以直接按文本命令或聊天内容处理。
-void process_client_message(int client_fd, std::string msg) {
+void process_client_message(int epoll_fd, int client_fd, std::string msg) {
     // 未注册的连接还没有昵称，因此把它发来的第一条完整消息作为昵称。
     if (!is_client_registered(client_fd)) {
         // 客户端接入后的第一条消息被当作昵称注册。
@@ -74,15 +100,15 @@ void process_client_message(int client_fd, std::string msg) {
         // 客户端接收线程会直接打印。
         std::string welcome_msg =
             "[" + get_current_time() + "] [system] Welcome, " + msg + "!\n";
-        send(client_fd, welcome_msg.c_str(), welcome_msg.size(), 0);
+        send_msg_to_client(epoll_fd, client_fd, welcome_msg);
 
         std::string join_msg =
             "[" + get_current_time() + "] [system] " + msg + " joined the chat\n";
         std::cout << join_msg;
-        broadcast_msg(client_fd, join_msg);
+        broadcast_msg(epoll_fd, client_fd, join_msg);
     } else {
         // 已注册用户可以先尝试走命令处理；命令处理成功时不会再广播普通消息。
-        if (handle_command(client_fd, msg)) {
+        if (handle_command(epoll_fd, client_fd, msg)) {
             return;
         }
 
@@ -93,7 +119,7 @@ void process_client_message(int client_fd, std::string msg) {
         std::string formatted_msg =
             "[" + get_current_time() + "] [" + name + "]: " + msg + "\n";
         std::cout << formatted_msg;
-        broadcast_msg(client_fd, formatted_msg);
+        broadcast_msg(epoll_fd, client_fd, formatted_msg);
 
         // 广播成功后再尝试写入数据库。当前代码不因保存失败而影响在线聊天流程。
         g_mysql_storage.save_message(name, msg, "chat");
@@ -108,7 +134,23 @@ void process_client_message(int client_fd, std::string msg) {
 // - 正常读到数据：追加到客户端缓冲区并尽可能拆出完整消息。
 // - 读到 0：对端正常关闭。
 // - 读到错误：根据 errno 判断是暂时无数据还是连接异常。
-void handle_client_event(int epoll_fd, int client_fd) {
+void handle_client_event(int epoll_fd, int client_fd, uint32_t events) {
+    if ((events & (EPOLLERR | EPOLLHUP)) != 0) {
+        disconnect_client(epoll_fd, client_fd, true);
+        return;
+    }
+
+    if ((events & EPOLLOUT) != 0 && !handle_client_output(epoll_fd, client_fd)) {
+        return;
+    }
+
+    if ((events & EPOLLIN) == 0) {
+        if ((events & EPOLLRDHUP) != 0) {
+            disconnect_client(epoll_fd, client_fd, true);
+        }
+        return;
+    }
+
     // 读取客户端发来的数据。
     //
     // 多预留 1 个字节，方便后续如果需要时兼容 C 风格字符串处理。
@@ -148,7 +190,23 @@ void handle_client_event(int epoll_fd, int client_fd) {
 
     std::string msg;
     // 从缓冲区中不断提取完整消息，直到剩余内容不足以组成下一条消息。
-    while (extract_message_from_client_buffer(client_fd, msg)) {
-        process_client_message(client_fd, msg);
+    while (true) {
+        ClientMessageResult result = extract_message_from_client_buffer(client_fd, msg);
+
+        if (result == ClientMessageResult::NeedMoreData) {
+            break;
+        }
+
+        if (result == ClientMessageResult::ProtocolError) {
+            std::cerr << "protocol error from client " << client_fd << std::endl;
+            disconnect_client(epoll_fd, client_fd, true);
+            break;
+        }
+
+        process_client_message(epoll_fd, client_fd, msg);
+    }
+
+    if ((events & EPOLLRDHUP) != 0) {
+        disconnect_client(epoll_fd, client_fd, true);
     }
 }
