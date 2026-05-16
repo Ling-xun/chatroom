@@ -4,6 +4,8 @@
 
 #include <string>
 
+#include "common/config.h"
+
 // mysql_storage.h
 //
 // 声明聊天室消息持久化接口，封装 MySQL 连接建立、释放和消息写入能力。
@@ -16,8 +18,8 @@ public:
     MySQLStorage();
     ~MySQLStorage();
 
-    // 建立到 MySQL 的连接，成功返回 true，失败时打印错误并返回 false。
-    bool connect();
+    // 根据配置建立到 MySQL 的连接，成功返回 true，失败时打印错误并返回 false。
+    bool connect(const MySQLConfig& config);
 
     // 保存一条聊天消息。
     //

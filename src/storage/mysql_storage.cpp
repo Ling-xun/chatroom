@@ -52,7 +52,7 @@ MySQLStorage::~MySQLStorage() {
     }
 }
 
-bool MySQLStorage::connect() {
+bool MySQLStorage::connect(const MySQLConfig& config) {
     // 如果未来支持重连，这里需要先处理已有 conn_；当前程序只在启动时连接一次。
     // 创建 MySQL 连接句柄。此时只是初始化客户端结构，还没有连接到数据库服务。
     conn_ = mysql_init(nullptr);
@@ -61,15 +61,15 @@ bool MySQLStorage::connect() {
         return false;
     }
 
-    // 连接本机 MySQL 服务，并选择 chatroom 数据库。
+    // 根据运行配置连接 MySQL 服务，并选择目标数据库。
     // 参数依次为：连接句柄、主机、用户名、密码、数据库名、端口、Unix socket、客户端标志。
     MYSQL* result = mysql_real_connect(
         conn_,
-        "localhost",
-        "chatuser",
-        "123456",
-        "chatroom",
-        3306,
+        config.host.c_str(),
+        config.user.c_str(),
+        config.password.c_str(),
+        config.database.c_str(),
+        config.port,
         nullptr,
         0
     );

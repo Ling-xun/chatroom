@@ -8,6 +8,7 @@
 #include <iostream>
 #include <mutex>
 
+#include "common/config.h"
 #include "server/chat_server.h"
 #include "server/client_manager.h"
 #include "server/event_handler.h"
@@ -25,12 +26,6 @@
 // 5. 将客户端可读事件交给 event_handler 处理。
 
 namespace {
-
-// 服务端监听端口，客户端需要连接到这个端口才能进入聊天室。
-constexpr int kServerPort = 8080;
-
-// listen 的等待队列长度：系统会暂存已经完成 TCP 握手、等待 accept 的连接。
-constexpr int kListenBacklog = 5;
 
 // 单次 epoll_wait 最多取出的就绪事件数量。
 constexpr int kMaxEvents = 1024;
@@ -59,6 +54,9 @@ int set_nonblocking(int fd) {
 }
 
 int main() {
+    ServerConfig server_config = load_server_config();
+    MySQLConfig mysql_config = load_mysql_config();
+
     // 1. 创建 TCP 监听 socket，作为聊天室服务器接收新连接的入口。
     //
     // AF_INET 表示使用 IPv4；SOCK_STREAM 表示使用面向连接的 TCP。
@@ -83,7 +81,7 @@ int main() {
     // INADDR_ANY 表示不限定某一块网卡，127.0.0.1 和局域网 IP 都可以接入。
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(kServerPort);
+    addr.sin_port = htons(server_config.port);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     // 3. 将 socket 绑定到指定 IP 和端口。
@@ -95,7 +93,7 @@ int main() {
     }
 
     // 4. 开始监听客户端连接请求，等待后续 accept。
-    if (listen(server_fd, kListenBacklog) < 0) {
+    if (listen(server_fd, server_config.backlog) < 0) {
         perror("listen");
         close(server_fd);
         return -1;
@@ -108,10 +106,10 @@ int main() {
     }
 
     // 6. 打印服务器启动信息，提示客户端连接。
-    std::cout << "server start at port " << kServerPort << std::endl;
+    std::cout << "server start at port " << server_config.port << std::endl;
 
     // 初始化消息持久化连接。连接失败时只关闭保存功能，服务器仍继续提供聊天服务。
-    if (!g_mysql_storage.connect()) {
+    if (!g_mysql_storage.connect(mysql_config)) {
         std::cerr << "mysql connect failed, messages will not be saved" << std::endl;
     }
 

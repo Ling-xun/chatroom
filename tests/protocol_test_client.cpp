@@ -9,6 +9,8 @@
 #include <string>
 #include <thread>
 
+#include "common/config.h"
+
 // protocol_test_client.cpp
 //
 // 这是一个用于验证服务端长度前缀协议处理能力的小测试客户端。
@@ -21,12 +23,6 @@
 // 运行服务端后启动该程序，可以在服务端日志或其他客户端中观察消息是否被正确拆包。
 
 namespace {
-
-// 测试客户端默认连接本机服务端。
-const char* kServerIp = "127.0.0.1";
-
-// 需要与服务端监听端口保持一致。
-constexpr int kServerPort = 8080;
 
 // 循环发送，保证测试数据完整写入 socket。
 bool send_all(int sock, const char* data, size_t len) {
@@ -62,6 +58,8 @@ std::string pack_message(const std::string& msg) {
 }  // namespace
 
 int main() {
+    ClientConfig config = load_client_config();
+
     // 创建 TCP socket，作为测试客户端与服务端通信的连接。
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
@@ -72,8 +70,8 @@ int main() {
     // 组装服务端地址。
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(kServerPort);
-    addr.sin_addr.s_addr = inet_addr(kServerIp);
+    addr.sin_port = htons(config.server_port);
+    addr.sin_addr.s_addr = inet_addr(config.server_ip.c_str());
 
     // 连接服务端；失败时释放 socket 后退出。
     if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {

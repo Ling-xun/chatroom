@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "client/chat_client.h"
+#include "common/config.h"
 
 // main.cpp
 //
@@ -19,17 +20,9 @@
 // 3. 启动发送线程读取终端输入，启动接收线程打印服务端广播。
 // 4. 用户输入 exit 或标准输入结束时关闭写端并退出。
 
-namespace {
-
-// 客户端默认连接本机服务器；如果服务端部署到其他机器，只需要改这里。
-const char* kServerIp = "127.0.0.1";
-
-// 需要与服务端监听端口保持一致。
-constexpr int kServerPort = 8080;
-
-}  // namespace
-
 int main() {
+    ClientConfig config = load_client_config();
+
     // 1. 创建客户端 socket，并准备连接聊天服务器。
     //
     // AF_INET 表示 IPv4，SOCK_STREAM 表示 TCP。创建成功后 sock 就是后续通信使用的 fd。
@@ -44,8 +37,8 @@ int main() {
     // htons 用于把端口转成网络字节序；inet_addr 用于把点分十进制 IP 转成二进制地址。
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(kServerPort);
-    addr.sin_addr.s_addr = inet_addr(kServerIp);
+    addr.sin_port = htons(config.server_port);
+    addr.sin_addr.s_addr = inet_addr(config.server_ip.c_str());
 
     // 3. 主动连接服务端。连接失败时关闭 socket 后退出。
     if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {

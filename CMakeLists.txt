@@ -11,6 +11,7 @@ find_package(Threads REQUIRED)
 
 # 聊天服务器：负责监听客户端连接、管理在线用户、处理命令并保存消息到 MySQL。
 add_executable(server
+    src/common/config.cpp
     src/server/main.cpp
     src/server/chat_server.cpp
     src/server/client_manager.cpp
@@ -21,12 +22,14 @@ add_executable(server
 
 # 聊天客户端：负责连接服务器，并在本地处理用户输入和服务器消息。
 add_executable(client
+    src/common/config.cpp
     src/client/main.cpp
     src/client/chat_client.cpp
 )
 
 # 协议测试客户端：用于手动或自动验证消息拆包、粘包等协议边界。
 add_executable(protocol_test_client
+    src/common/config.cpp
     tests/protocol_test_client.cpp
 )
 
