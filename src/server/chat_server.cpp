@@ -34,12 +34,16 @@ std::string get_current_time() {
     return std::string(time_str);
 }
 
+// 将消息加入客户端发送队列，并让 epoll 后续通知该 fd 的可写事件。
+//
+// 这里不直接阻塞写 socket，避免一个慢客户端拖住整个服务端事件循环。
 bool send_msg_to_client(int epoll_fd, int client_fd, const std::string& msg) {
     if (!queue_client_message(client_fd, msg)) {
         return false;
     }
 
     epoll_event event{};
+    // 保留 EPOLLIN/EPOLLRDHUP，同时额外开启 EPOLLOUT，确保仍能继续收消息和感知断开。
     event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT;
     event.data.fd = client_fd;
 

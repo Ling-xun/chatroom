@@ -54,6 +54,7 @@ int main() {
     std::cout << "\n";
 
     if (name.empty()) {
+        // 和服务端兜底逻辑保持一致，避免空昵称进入聊天室。
         name = "unknown";
     }
 
@@ -88,7 +89,7 @@ int main() {
             }
 
             // 普通聊天内容按长度前缀协议发送给服务端。
-           if (!send_message(sock, msg)) {
+            if (!send_message(sock, msg)) {
                 std::cerr << "send message failed" << std::endl;
                 break;
             }

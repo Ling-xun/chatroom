@@ -1,11 +1,11 @@
 #include "server/client_manager.h"
 
-#include <cerrno>
 #include <algorithm>
+#include <cerrno>
 #include <mutex>
 #include <string>
-#include <vector>
 #include <sys/socket.h>
+#include <vector>
 
 #include "common/protocol.h"
 
@@ -35,6 +35,9 @@ std::mutex clients_mutex;
 
 namespace {
 
+// 单个客户端允许积压的最大发送缓冲区。
+//
+// 如果某个客户端长时间不读数据，服务端不会无限缓存广播消息，而是让上层断开该连接。
 constexpr size_t kMaxSendBufferSize = 1024 * 1024;
 
 }  // namespace
@@ -205,12 +208,17 @@ ClientMessageResult extract_message_from_client_buffer(int client_fd, std::strin
     return ClientMessageResult::NeedMoreData;
 }
 
+// 将一条待展示消息写入客户端发送缓冲区。
+//
+// 这里不直接 send，而是先按协议封包并排队；event_handler 会打开 EPOLLOUT，
+// 等 socket 可写时再调用 flush_client_send_buffer 真正写入网络。
 bool queue_client_message(int client_fd, const std::string& msg) {
     std::lock_guard<std::mutex> lock(clients_mutex);
     std::string packet = pack_protocol_message(msg);
 
     for (auto& client : clients) {
         if (client.sock == client_fd) {
+            // 防止慢客户端拖垮服务端内存；超过上限时让调用方按发送失败处理。
             if (client.send_buffer.size() + packet.size() > kMaxSendBufferSize) {
                 return false;
             }
@@ -223,6 +231,10 @@ bool queue_client_message(int client_fd, const std::string& msg) {
     return false;
 }
 
+// 尽量把指定客户端发送缓冲区中的数据写入 socket。
+//
+// 非阻塞 send 可能只写出一部分数据，也可能暂时返回 EAGAIN；调用方根据返回值决定
+// 是否继续监听 EPOLLOUT，或者断开已经不可写的客户端连接。
 ClientFlushResult flush_client_send_buffer(int client_fd) {
     std::lock_guard<std::mutex> lock(clients_mutex);
 
@@ -232,6 +244,7 @@ ClientFlushResult flush_client_send_buffer(int client_fd) {
         }
 
         while (!client.send_buffer.empty()) {
+            // MSG_NOSIGNAL 避免对已断开的 socket 写入时触发 SIGPIPE 终止整个进程。
             ssize_t n = send(
                 client.sock,
                 client.send_buffer.data(),
@@ -240,6 +253,7 @@ ClientFlushResult flush_client_send_buffer(int client_fd) {
             );
 
             if (n > 0) {
+                // 只移除已经成功写出的前缀；剩余部分等待下一轮继续发送。
                 client.send_buffer.erase(0, static_cast<size_t>(n));
                 continue;
             }
@@ -255,8 +269,10 @@ ClientFlushResult flush_client_send_buffer(int client_fd) {
             return ClientFlushResult::Error;
         }
 
+        // 循环退出说明没有剩余待发送数据。
         return ClientFlushResult::Complete;
     }
 
+    // 找不到客户端通常表示连接已经在其他路径被清理。
     return ClientFlushResult::Disconnected;
 }

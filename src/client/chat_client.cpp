@@ -88,6 +88,7 @@ void recv_messages(int sock) {
             break;
         }
 
+        // TCP 是字节流，可能一次收到半条或多条服务端消息，所以先累计再按协议拆包。
         recv_buffer.append(buffer, n);
 
         while (true) {
@@ -106,7 +107,6 @@ void recv_messages(int sock) {
             }
 
             // 标准输出是共享资源，加锁后再打印，保证一条消息完整显示。
-            //
             std::lock_guard<std::mutex> lock(cout_mutex);
             std::cout << msg << std::flush;
         }
