@@ -77,7 +77,11 @@ void recv_messages(int sock) {
 
     while (true) {
         char buffer[kBufferSize];
-        int n = recv(sock, buffer, kBufferSize, 0);
+        ssize_t n = recv(sock, buffer, kBufferSize, 0);
+
+        if (n < 0 && errno == EINTR) {
+            continue;
+        }
 
         // n == 0 表示服务器关闭连接；n < 0 表示接收出错。两种情况都结束接收线程。
         if (n <= 0) {
@@ -103,7 +107,7 @@ void recv_messages(int sock) {
             // 标准输出是共享资源，加锁后再打印，保证一条消息完整显示。
             //
             std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << msg;
+            std::cout << msg << std::flush;
         }
     }
 }
