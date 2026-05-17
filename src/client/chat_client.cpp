@@ -92,7 +92,8 @@ void recv_messages(int sock) {
 
         while (true) {
             std::string msg;
-            ProtocolExtractResult result = extract_protocol_message(recv_buffer, msg);
+            ProtocolExtractResult result =
+                extract_protocol_message(recv_buffer, msg, kMaxProtocolMessageSize);
 
             if (result == ProtocolExtractResult::NeedMoreData) {
                 break;
